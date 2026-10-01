@@ -1,0 +1,12 @@
+{
+  "subject": "Where is my order ORD123?",
+  "body": "Hi, I would like to know the status of my order ORD123. I haven't received it yet.",
+  "expected_classification": {
+    "intent": "ORDER_ISSUE",
+    "category": "MISSING_ORDER",
+    "priority": "MEDIUM",
+    "sentiment": "NEUTRAL",
+    "order_id": "ORD123",
+    "summary": "Customer is asking for the status of order ORD123 because they have not received it."
+  }
+}

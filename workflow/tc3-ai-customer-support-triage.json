@@ -1,0 +1,1421 @@
+{
+  "name": "tc3-ai-customer-support-triage",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -2944,
+        656
+      ],
+      "id": "891e892c-778b-4669-bc2b-93160c3a1bbf",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jh1IcqriwQJm0fgt",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-5-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -1816,
+        872
+      ],
+      "id": "0054d0a8-6e3f-4136-8055-43114443dabb",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "4hIPlqnwzdWlimii",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"intent\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"ORDER_ISSUE\",\n        \"REFUND_REQUEST\",\n        \"SHIPPING_QUESTION\",\n        \"PRODUCT_QUESTION\",\n        \"GENERAL_QUESTION\",\n        \"OTHER\"\n      ]\n    },\n    \"category\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"MISSING_ORDER\",\n        \"WRONG_ITEM\",\n        \"DAMAGED_ITEM\",\n        \"LATE_DELIVERY\",\n        \"REFUND\",\n        \"PRODUCT_INFORMATION\",\n        \"OTHER\"\n      ]\n    },\n    \"priority\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"LOW\",\n        \"MEDIUM\",\n        \"HIGH\"\n      ]\n    },\n    \"sentiment\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"POSITIVE\",\n        \"NEUTRAL\",\n        \"FRUSTRATED\",\n        \"ANGRY\"\n      ]\n    },\n    \"order_id\": {\n      \"type\": [\"string\", \"null\"]\n    },\n    \"sender_name\": {\n      \"type\": \"string\"\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    }\n  },\n  \"required\": [\n    \"intent\",\n    \"category\",\n    \"priority\",\n    \"sentiment\",\n    \"order_id\",\n    \"sender_name\",\n    \"summary\"\n  ],\n  \"additionalProperties\": false\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -1688,
+        872
+      ],
+      "id": "cd07a237-20ab-43b1-a36a-acf1f1af6df4",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nconst allowedIntents = [\n  \"ORDER_ISSUE\",\n  \"REFUND_REQUEST\",\n  \"SHIPPING_QUESTION\",\n  \"PRODUCT_QUESTION\",\n  \"GENERAL_QUESTION\",\n  \"OTHER\"\n];\n\nconst intentRequiringOrderID = [\n  \"ORDER_ISSUE\",\n  \"REFUND_REQUEST\",\n  \"SHIPPING_QUESTION\"\n];\n\nconst allowedCategories = [\n  \"MISSING_ORDER\",\n  \"WRONG_ITEM\",\n  \"DAMAGED_ITEM\",\n  \"LATE_DELIVERY\",\n  \"REFUND\",\n  \"PRODUCT_INFORMATION\",\n  \"OTHER\"\n];\n\nconst allowedPriorities = [\n  \"LOW\",\n  \"MEDIUM\",\n  \"HIGH\"\n];\n\nconst allowedSentiments = [\n  \"POSITIVE\",\n  \"NEUTRAL\",\n  \"FRUSTRATED\",\n  \"ANGRY\"\n];\n\nreturn items.map(item => {\n  const aiOutput = item.json.output;\n  const errors = [];\n\n  if (!allowedIntents.includes(aiOutput.intent)) {\n    errors.push(\"Invalid intent\");\n  }\n\n  if (!allowedCategories.includes(aiOutput.category)) {\n    errors.push(\"Invalid category\");\n  }\n\n  if (!allowedPriorities.includes(aiOutput.priority)) {\n    errors.push(\"Invalid priority\");\n  }\n\n  if (!allowedSentiments.includes(aiOutput.sentiment)) {\n    errors.push(\"Invalid sentiment\");\n  }\n\n  if (aiOutput.order_id === null || aiOutput.order_id === undefined) {\n    if (intentRequiringOrderID.includes(aiOutput.intent)) {\n      errors.push(\"Order ID required for this intent.\");\n    }\n  } else if (\n    typeof aiOutput.order_id !== \"string\" ||\n    aiOutput.order_id.trim() === \"\"\n  ) {\n    errors.push(\"Invalid order_id\");\n  }\n\n  if (\n    typeof aiOutput.summary !== \"string\" ||\n    aiOutput.summary.trim() === \"\"\n  ) {\n    errors.push(\"Missing summary\");\n  }\n\n  return {\n    json: {\n      valid: errors.length === 0,\n      errors,\n      ...aiOutput\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1472,
+        656
+      ],
+      "id": "bc535f2b-d591-4cf8-86d5-7ca74e5f3ca4",
+      "name": "Validate AI Output"
+    },
+    {
+      "parameters": {
+        "jsCode": "const emails = $('Get email').all();\n\nreturn emails.map(email => ({\n  json: {\n    message_id: email.json.messageId ?? \"\",\n    thread_id: email.json.threadId ?? \"\",\n    sender: email.json.from?.value?.[0]?.address ?? \"\",\n    sender_name: email.json.from?.value?.[0]?.name ?? \"\",\n    recipient: email.json.to?.value?.[0]?.address ?? \"\",\n    subject: email.json.subject ?? \"\",\n    body: email.json.text ?? \"\",\n    html_body: email.json.html ?? \"\",\n    received_at: email.json.date ?? \"\"\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2048,
+        656
+      ],
+      "id": "11d2ccb5-ab50-4101-96b5-5e0533fe5d68",
+      "name": "Prepare Email"
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "messageId": "={{ $json.id }}",
+        "simple": false,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -2720,
+        656
+      ],
+      "id": "1fd461c5-10e2-4097-a1d7-938c0952b610",
+      "name": "Get email",
+      "webhookId": "fff904ca-8cd3-44c4-9a6a-cd4e63459949",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jh1IcqriwQJm0fgt",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b6237852-c36e-4c3c-afb3-7da3495d227a",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1248,
+        656
+      ],
+      "id": "3af27199-6b2e-42a7-891a-88815d06cc72",
+      "name": "Is AI output valid?"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "ORDER_ISSUE",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "7a4066bf-bee6-4144-ba5f-f2ac70e3491d"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ORDER_ISSUE"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "e263dbfb-ccfc-41b5-882a-66dab9b263a6",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "SHIPPING_QUESTION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "SHIPPING_QUESTION"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7d1a10f9-612d-42df-9544-82d7cad6fa1a",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "REFUND_REQUEST",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "REFUND_REQUEST"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "2a587010-584c-421f-bd67-81d4d30d73ee",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "OTHER",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "OTHER"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c925864f-0fbf-4d5f-9c98-54f83b398f10",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "PRODUCT_QUESTION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PRODUCT_QUESTION"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "37bde8a6-e471-4393-9941-2ef1342474f7",
+                    "leftValue": "={{ $json.intent }}",
+                    "rightValue": "GENERAL_QUESTION",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "GENERAL_QUESTION"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -1024,
+        448
+      ],
+      "id": "bafd14a6-1fd8-4f8b-9bb9-47b72aca7e7f",
+      "name": "Route by Intent"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU",
+          "mode": "list",
+          "cachedResultName": "tc2-order-intake-inventory",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1335376271,
+          "mode": "list",
+          "cachedResultName": "orders",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU/edit#gid=1335376271"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Order ID",
+              "lookupValue": "={{ $json.order_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -448,
+        416
+      ],
+      "id": "58ea1189-20c1-4410-8894-2b4a8f37098a",
+      "name": "Order Lookup",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "zNZZEjP5zf9EMnpB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "f618f41b-2ac4-4eb6-9d26-2f522db8aa92",
+              "leftValue": "={{ $json[\"Order ID\"] }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        0,
+        352
+      ],
+      "id": "7e1f1cbd-327e-4395-8bd9-7d57221a20f8",
+      "name": "Is order found?"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        520,
+        232
+      ],
+      "id": "4a01e2c2-f325-497a-950d-a881213fba05",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "4hIPlqnwzdWlimii",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const { sender_name, order_id } = item.json;\n\n  return {\n    json: {\n      response: `Hi ${sender_name},\n\nWe couldn't find an order matching ${order_id} in our system.\n\nPlease verify the order ID and send it again so we can look into this for you.\n\nBest regards,\nCustomer Support`\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        592
+      ],
+      "id": "b4d7b4ce-b40b-4db0-9082-11ae12c1fe39",
+      "name": "Handle Order Not Found"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const ai = item.json;\n\n  return {\n    json: {\n      escalation_required: true,\n      intent: ai.intent,\n      priority: ai.priority,\n      order_id: ai.order_id,\n      summary: ai.summary,\n      message: `Customer support escalation required for: ${ai.intent\n        .replaceAll(\"_\", \" \")\n        .toLowerCase()}.`\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        400
+      ],
+      "id": "02258ef0-ea04-4845-9e88-fb1f4b278cfb",
+      "name": "Handle Human Escalation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "76fa65c1-729c-48ba-b112-a4553074f619",
+              "leftValue": "={{ $('Is AI output valid?').item.json.intent }}",
+              "rightValue": "REFUND_REQUEST",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        256
+      ],
+      "id": "62281b3f-6f72-4a4c-a658-6a6a770d71e7",
+      "name": "Is REFUND?"
+    },
+    {
+      "parameters": {
+        "fromEmail": "ernestowilliamjr@gmail.com",
+        "toEmail": "williamcernestojr@yahoo.com",
+        "subject": "=[ESCALATION] {{ $json.intent }} - {{ $json.order_id }}",
+        "html": "=<h2>Customer Support Escalation</h2>\n\n<p>A customer support issue requires human attention.</p>\n\n<hr>\n\n<h3>Escalation Details</h3>\n\n<table cellpadding=\"6\" cellspacing=\"0\" border=\"0\">\n  <tr>\n    <td><strong>Priority:</strong></td>\n    <td>{{ $json.priority }}</td>\n  </tr>\n  <tr>\n    <td><strong>Intent:</strong></td>\n    <td>{{ $json.intent }}</td>\n  </tr>\n  <tr>\n    <td><strong>Order ID:</strong></td>\n    <td>{{ $json.order_id }}</td>\n  </tr>\n</table>\n\n<h3>Customer</h3>\n\n<table cellpadding=\"6\" cellspacing=\"0\" border=\"0\">\n  <tr>\n    <td><strong>Name:</strong></td>\n    <td>{{ $('Prepare Email').item.json.sender_name }}</td>\n  </tr>\n  <tr>\n    <td><strong>Email:</strong></td>\n    <td>{{ $('Prepare Email').item.json.sender }}</td>\n  </tr>\n</table>\n\n<h3>Summary</h3>\n\n<p>{{ $json.summary }}</p>\n\n<h3>Original Email</h3>\n\n<p><strong>Subject:</strong> {{ $('Prepare Email').item.json.subject }}</p>\n\n<blockquote>\n  {{ $('Prepare Email').item.json.body }}\n</blockquote>\n\n<hr>\n\n<p><em>This escalation was generated automatically by the customer support workflow.</em></p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        800,
+        400
+      ],
+      "id": "cd6ce856-d236-4379-aa0f-3d7c542b1db6",
+      "name": "Send customer support email",
+      "webhookId": "29e37327-bc78-4d00-8f11-30212a5b5452",
+      "credentials": {
+        "smtp": {
+          "id": "rCWjvhevJBgp42Ac",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "ernestowilliamjr@gmail.com",
+        "toEmail": "={{ $('Prepare Email').item.json.sender }}",
+        "subject": "=Re: {{ $('Prepare Email').item.json.subject }}",
+        "html": "={{ $json.response }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        512,
+        592
+      ],
+      "id": "3dd1ed75-9776-4ea9-9027-0b5e081981e8",
+      "name": "Send response to customer",
+      "webhookId": "f45ba034-107d-4ec5-9b41-7b1d419e0e96",
+      "credentials": {
+        "smtp": {
+          "id": "rCWjvhevJBgp42Ac",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -728,
+        792
+      ],
+      "id": "06d0da79-0fa3-45b7-b67c-e20880068042",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "4hIPlqnwzdWlimii",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "ernestowilliamjr@gmail.com",
+        "toEmail": "={{ $('Prepare Email').item.json.sender }}",
+        "subject": "=Re: {{ $('Prepare Email').item.json.subject }}",
+        "html": "=<div style=\"white-space: pre-line;\">\n  {{ $json.output }}\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -448,
+        672
+      ],
+      "id": "6a5fe666-bcae-4b07-83ff-9bf22c9780d0",
+      "name": "Send response to customer1",
+      "webhookId": "591028fe-3a39-4137-adb1-2281e46066f3",
+      "credentials": {
+        "smtp": {
+          "id": "rCWjvhevJBgp42Ac",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a customer support response assistant.\n\nGenerate a concise, professional response to the customer.\n\nCustomer email:\nSubject: {{ $('Prepare Email').item.json.subject }}\nBody: {{ $('Prepare Email').item.json.body }}\n\nVerified order information:\nOrder ID: {{ $json[\"Order ID\"] }}\nCustomer Name: {{ $json[\"Customer Name\"] }}\nOrder Total: {{ $json[\"Total\"] }}\nOrder Status: {{ $json[\"Status\"] }}\nCreated At: {{ $json[\"Created At\"] }}\n\nRules:\n- Use only the customer email and verified order information provided above.\n- Do not invent shipping dates, tracking numbers, delivery dates, or other information.\n- Do not change or reinterpret the order status.\n- Answer the customer's question using only the verified information available.\n- If the available information does not answer the customer's question, clearly say what information is unavailable.\n- Be polite and professional.\n- Keep the response concise.\n- Do not mention that AI was used.\n- Do not include a subject line.\n- Address the customer by name when appropriate.\n- Do not promise to monitor, notify, track, or perform any action that is not explicitly supported by the workflow.\n- Include only order information that is relevant to the customer's question.\n- Do not unnecessarily include the order total or creation date.\n- Do not ask the customer to specify what information they need if their original question is already clear.\n- Do not ask the customer to clarify their request when their original question is already clear.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        448,
+        0
+      ],
+      "id": "2c2484e4-2c6b-4a9d-af96-34e63e1bca37",
+      "name": "Generate order response"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a customer support response assistant.\n\nGenerate a concise, professional response to the customer's product or general question.\n\nCustomer email:\nSubject: {{ $('Prepare Email').item.json.subject }}\nBody: {{ $('Prepare Email').item.json.body }}\n\nRules:\n- Answer the customer's question using only the information explicitly available in the customer email and any information provided to you.\n- Do not invent product specifications, features, prices, availability, company policies, procedures, guarantees, or other facts.\n- Do not guess, infer, or make assumptions about missing information.\n- If the information needed to answer the question is unavailable, clearly and naturally explain that you are unable to provide the requested information at this time.\n- Do not explain that the customer's email lacks information when the missing information is actually company or product information.\n- Avoid repetitive or robotic phrases such as \"the information is unavailable.\"\n- Do not refer to the customer's email as the reason you cannot answer unless that is directly relevant.\n- Answer the customer's actual question directly when sufficient information is available.\n- Do not offer advice, recommendations, or further assistance unless the workflow has the information or capability required to provide it.\n- Do not promise to perform actions, check information, contact someone, monitor something, or provide updates unless the workflow explicitly has the ability to do so.\n- Be polite and professional.\n- Keep the response concise and natural.\n- Do not mention that AI was used.\n- Do not include a subject line.\n- Address the customer by name when appropriate.",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -800,
+        576
+      ],
+      "id": "d58c9c5b-34b6-49d3-928e-bde51ea38e3f",
+      "name": "Generate Non-order Response"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a customer support email classification system.\n\nAnalyze the customer's email and extract structured information from it:\n\nConversation history:\n{{ $('Prepare thread context').item.json.thread_context }}\n\nLatest customer email:\nSubject: {{ $json.subject }}\nBody: {{ $json.body }}\n\nDetermine:\n\n1. The customer's intent.\n2. The specific issue category.\n3. The priority.\n4. The customer's sentiment.\n5. The order ID if explicitly mentioned.\n6. A short summary of the customer's request.\n\nAllowed intents and their definitions:\n\n- ORDER_ISSUE: A problem with an existing order, such as missing, damaged, or incorrect items.\n- REFUND_REQUEST: The customer explicitly requests a refund or return.\n- SHIPPING_QUESTION: The customer asks about shipping, delivery, tracking, or arrival of an existing order.\n- PRODUCT_QUESTION: The customer asks about a product, its features, availability, specifications, or usage.\n- GENERAL_QUESTION: A customer asks a general question about the company, services, policies, or other information that can reasonably be answered by customer support.\n- OTHER: The message does not fit any of the intents above, including messages such as spam, partnership proposals, job inquiries, complaints unrelated to orders/products/services, or other non-support requests.\n\nAllowed categories:\n- MISSING_ORDER\n- WRONG_ITEM\n- DAMAGED_ITEM\n- LATE_DELIVERY\n- REFUND\n- PRODUCT_INFORMATION\n- OTHER\n\nAllowed priorities:\n- LOW\n- MEDIUM\n- HIGH\n\nAllowed sentiments:\n- POSITIVE\n- NEUTRAL\n- FRUSTRATED\n- ANGRY\n\nRules:\n- Use only the allowed values.\n- Do not invent information.\n- Never infer, guess, or generate an order ID.\n- Extract an order ID only when it is explicitly present in the subject or email body.\n- If an order ID is present, copy it exactly as written.\n- If there is no order ID, return null.\n- Do not respond to the customer.\n- Only classify and extract information.\n- Use OTHER when the message is not a customer support request that fits one of the other defined intents.\n- Do not classify a message as GENERAL_QUESTION merely because it contains a question. Consider what the customer is actually asking about.\n- Do not immediately classify a message as GENERAL_QUESTION or PRODUCT_QUESTION if the customer has specified an order ID in the subject or the body of the email. Classify it as ORDER_ISSUE.\n- Classify an email as OTHER when it is not a customer-support request related to an order, shipping, refund, product, or general company/service question.\n- Do not respond to or create a support case for messages classified as OTHER.\n\nConversation context rules:\n- The latest customer email is the message you are classifying.\n- Use the conversation history to understand the context of the latest customer message.\n- Use previous messages only when the latest customer email clearly refers to or continues the existing conversation.\n- If the latest customer email is unrelated to the previous conversation, classify it independently.\n- If the latest customer message refers to information established earlier in the conversation, use that information.\n- If the latest customer message does not explicitly contain an order ID but clearly continues an existing order-related conversation, use the most recently confirmed order ID relevant to that conversation.\n- If the customer corrected an earlier order ID, use the corrected order ID.\n- Do not use an older, incorrect order ID when a newer customer message established a different order ID.\n- A customer's confirmation or reply can express an intent even when it does not repeat the order ID.\n- Never assume that an email belongs to the existing support conversation merely because it is in the same thread.\n",
+        "hasOutputParser": true,
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1824,
+        656
+      ],
+      "id": "2a39afd5-fd09-41c8-9b1e-cb7ea43b514f",
+      "name": "Classify email"
+    },
+    {
+      "parameters": {
+        "fromEmail": "ernestowilliamjr@gmail.com",
+        "toEmail": "={{ $('Prepare Email').item.json.sender }}",
+        "subject": "=Re:  {{ $('Prepare Email').item.json.subject }}",
+        "html": "=<div style=\"white-space: pre-line;\">\n  {{ $json.output }}\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        800,
+        112
+      ],
+      "id": "7a036656-4b66-48e0-ad1e-a942abfb3ffc",
+      "name": "Send order response to customer",
+      "webhookId": "ca5a33b8-c20b-498f-8be0-8782a44f5b07",
+      "credentials": {
+        "smtp": {
+          "id": "rCWjvhevJBgp42Ac",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "thread",
+        "operation": "get",
+        "threadId": "={{ $json.threadId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -2496,
+        656
+      ],
+      "id": "0029a499-4d7e-48b4-a878-a75b96e53de5",
+      "name": "Get a thread",
+      "webhookId": "199f47b0-5882-4890-939b-c95a02e41806",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "jh1IcqriwQJm0fgt",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nreturn items.map(item => {\n  const thread = item.json;\n  const messages = thread.messages ?? [];\n\n  const thread_context = messages\n    .map((message, index) => {\n      return `Message ${index + 1}\nFrom: ${message.From ?? \"\"}\nSubject: ${message.Subject ?? \"\"}\nContent: ${message.snippet ?? \"\"}`;\n    })\n    .join(\"\\n\\n\");\n\n  return {\n    json: {\n      ...thread,\n      thread_context\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2272,
+        656
+      ],
+      "id": "73ba2525-1c88-42d8-b29c-a9eb0f7122c1",
+      "name": "Prepare thread context"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU",
+          "mode": "list",
+          "cachedResultName": "tc2-order-intake-inventory",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 496123565,
+          "mode": "list",
+          "cachedResultName": "support-log",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU/edit#gid=496123565"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Logged At": "={{ $now }}",
+            "Thread ID": "={{ $('Prepare Email').item.json.thread_id }}",
+            "Customer Name": "={{ $('Prepare Email').item.json.sender_name }}",
+            "Customer Email": "={{ $('Prepare Email').item.json.sender }}",
+            "Intent": "={{ $('Classify email').item.json.output.intent }}",
+            "Category": "={{ $('Classify email').item.json.output.category }}",
+            "Priority": "={{ $('Classify email').item.json.output.priority }}",
+            "Order ID": "={{ $('Classify email').item.json.output.order_id }}",
+            "Summary": "={{ $('Classify email').item.json.output.summary }}",
+            "Status": "=ESCALATED"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Logged At",
+              "displayName": "Logged At",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Thread ID",
+              "displayName": "Thread ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Customer Name",
+              "displayName": "Customer Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Customer Email",
+              "displayName": "Customer Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Intent",
+              "displayName": "Intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Category",
+              "displayName": "Category",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Priority",
+              "displayName": "Priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1024,
+        400
+      ],
+      "id": "06456901-982a-4821-8f69-dc21f3ac919f",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "zNZZEjP5zf9EMnpB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -736,
+        336
+      ],
+      "id": "389c0186-6b82-4fdf-98a7-9b197d48defe",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "jsCode": "const ai = $json;\n\nreturn [\n  {\n    json: {\n      status: \"AI_VALIDATION_FAILED\",\n      errors: ai.errors,\n      intent: ai.intent ?? null,\n      category: ai.category ?? null,\n      priority: ai.priority ?? null,\n      sentiment: ai.sentiment ?? null,\n      order_id: ai.order_id ?? null,\n      summary: ai.summary ?? null,\n      message: \"AI output failed validation and was not processed.\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1024,
+        976
+      ],
+      "id": "53ff0d75-0f72-4b72-aff2-9409377ae1e2",
+      "name": "Handle Invalid AI Output"
+    },
+    {
+      "parameters": {
+        "fromEmail": "ernestowilliamjr@gmail.com",
+        "toEmail": "=williamcernestojr@yahoo.com",
+        "subject": "={{ $json.status }} - {{ $json.intent }}",
+        "html": "=<div style=\"white-space: pre-line;\">\n  {{ $json.message }}\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        -736,
+        976
+      ],
+      "id": "4c3c1e1f-dbba-4b95-957e-4d336e076b9a",
+      "name": "Send alert to admin",
+      "webhookId": "591028fe-3a39-4137-adb1-2281e46066f3",
+      "credentials": {
+        "smtp": {
+          "id": "rCWjvhevJBgp42Ac",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU",
+          "mode": "list",
+          "cachedResultName": "tc2-order-intake-inventory",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 344941015,
+          "mode": "list",
+          "cachedResultName": "ai-validation-errors",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1v7j0716aedgPSznvXaQR-RUENTMnZZz9FolvECRLPkU/edit#gid=344941015"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $now }}",
+            "Status": "={{ $('Handle Invalid AI Output').item.json.status }}",
+            "Errors": "={{ $('Handle Invalid AI Output').item.json.errors.map(item => item).join(\"\\n\") }}",
+            "Intent": "={{ $('Handle Invalid AI Output').item.json.intent }}",
+            "Order ID": "={{ $('Handle Invalid AI Output').item.json.order_id }}",
+            "Summary": "={{ $('Handle Invalid AI Output').item.json.message }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Errors",
+              "displayName": "Errors",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Intent",
+              "displayName": "Intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Order ID",
+              "displayName": "Order ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -448,
+        976
+      ],
+      "id": "0a91a43b-9851-40a5-b2ab-bd2dba966d61",
+      "name": "Log error",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "zNZZEjP5zf9EMnpB",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combineBySql",
+        "query": "SELECT *\nFROM input1\nLEFT JOIN input2\n  ON input1.order_id = input2.`Order ID`;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -224,
+        352
+      ],
+      "id": "e7890655-cada-456d-960f-d86bbb2b35a1",
+      "name": "Merge input with lookup results"
+    },
+    {
+      "parameters": {
+        "fromEmail": "ernestowilliamjr@gmail.com",
+        "toEmail": "={{ $json['Customer Email'] }}",
+        "subject": "=Re: {{ $('Prepare Email').item.json.subject }}",
+        "html": "=<div style=\"white-space: pre-line;\">\n  Hi {{ $('Prepare Email').item.json.sender_name }},\n\nWe've received your request for order {{ $('Validate AI Output').item.json.order_id }} and have forwarded it to our customer support team for review.\n\nA support representative will review your request and get back to you with the next steps.\n\nRegards,\nCustomer Support\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1248,
+        400
+      ],
+      "id": "b0521bf5-5814-4a8a-a60d-f44e3ae526a4",
+      "name": "Send response to customer2",
+      "webhookId": "b17bc369-7e49-451c-baef-8d0d74d14492",
+      "credentials": {
+        "smtp": {
+          "id": "rCWjvhevJBgp42Ac",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Gmail Trigger": [
+      {
+        "json": {
+          "id": "1a0f61d61d77813f",
+          "threadId": "1a0f61d61d77813f",
+          "snippet": "May i know your business hours for next week? And do you have other branches in San Carlos Negros? Sent from Yahoo Mail. Get the app",
+          "payload": {
+            "mimeType": "multipart/alternative"
+          },
+          "sizeEstimate": 7997,
+          "historyId": "1018485",
+          "internalDate": "1790835512000",
+          "labels": [
+            {
+              "id": "INBOX",
+              "name": "INBOX"
+            },
+            {
+              "id": "IMPORTANT",
+              "name": "IMPORTANT"
+            },
+            {
+              "id": "CATEGORY_PERSONAL",
+              "name": "CATEGORY_PERSONAL"
+            },
+            {
+              "id": "UNREAD",
+              "name": "UNREAD"
+            }
+          ],
+          "From": "William Ernesto <williamcernestojr@yahoo.com>",
+          "To": "\"ernestowilliamjr@gmail.com\" <ernestowilliamjr@gmail.com>",
+          "Subject": "Business Hours"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classify email",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Classify email",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email": {
+      "main": [
+        [
+          {
+            "node": "Classify email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get email": {
+      "main": [
+        [
+          {
+            "node": "Get a thread",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI Output": {
+      "main": [
+        [
+          {
+            "node": "Is AI output valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is AI output valid?": {
+      "main": [
+        [
+          {
+            "node": "Route by Intent",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Invalid AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Intent": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ],
+        [],
+        [
+          {
+            "node": "Generate Non-order Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Non-order Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Order Lookup": {
+      "main": [
+        [
+          {
+            "node": "Merge input with lookup results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Is order found?": {
+      "main": [
+        [
+          {
+            "node": "Is REFUND?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Order Not Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate order response",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Order Not Found": {
+      "main": [
+        [
+          {
+            "node": "Send response to customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Human Escalation": {
+      "main": [
+        [
+          {
+            "node": "Send customer support email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is REFUND?": {
+      "main": [
+        [
+          {
+            "node": "Handle Human Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate order response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Non-order Response",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Non-order Response": {
+      "main": [
+        [
+          {
+            "node": "Send response to customer1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify email": {
+      "main": [
+        [
+          {
+            "node": "Validate AI Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate order response": {
+      "main": [
+        [
+          {
+            "node": "Send order response to customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get a thread": {
+      "main": [
+        [
+          {
+            "node": "Prepare thread context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare thread context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send customer support email": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Send response to customer2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Order Lookup",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge input with lookup results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send response to customer": {
+      "main": [
+        []
+      ]
+    },
+    "Handle Invalid AI Output": {
+      "main": [
+        [
+          {
+            "node": "Send alert to admin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send alert to admin": {
+      "main": [
+        [
+          {
+            "node": "Log error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge input with lookup results": {
+      "main": [
+        [
+          {
+            "node": "Is order found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "0a654ee6-b792-4b9f-a30a-a0da8e9ee88f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "1727460908a969cf65fb52bfc279b4465ddb84eca0285180fbb9969b0299f975"
+  },
+  "nodeGroups": [],
+  "id": "RXeWtR6jW7XWbTq8",
+  "tags": []
+}

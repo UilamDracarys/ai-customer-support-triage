@@ -1,0 +1,12 @@
+{
+  "subject": "Shipping update for ORD-001",
+  "body": "Can you tell me when my order ORD-001 is expected to arrive?",
+  "expected_classification": {
+    "intent": "SHIPPING_QUESTION",
+    "category": "LATE_DELIVERY",
+    "priority": "MEDIUM",
+    "sentiment": "NEUTRAL",
+    "order_id": "ORD-001",
+    "summary": "Customer is asking about the expected delivery of order ORD-001."
+  }
+}

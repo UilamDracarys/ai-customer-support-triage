@@ -1,0 +1,12 @@
+{
+  "subject": "I want a refund for ORD-001",
+  "body": "Hi, I would like to request a refund for my order ORD-001. Please let me know what I need to do.",
+  "expected_classification": {
+    "intent": "REFUND_REQUEST",
+    "category": "REFUND",
+    "priority": "MEDIUM",
+    "sentiment": "NEUTRAL",
+    "order_id": "ORD-001",
+    "summary": "Customer requests a refund for order ORD-001."
+  }
+}

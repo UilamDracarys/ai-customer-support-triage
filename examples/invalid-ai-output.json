@@ -1,0 +1,18 @@
+{
+  "subject": "I want a refund for ORD-001",
+  "body": "Please refund my order ORD-001.",
+  "simulated_ai_output": {
+    "intent": "INVALID_INTENT",
+    "category": "REFUND",
+    "priority": "MEDIUM",
+    "sentiment": "NEUTRAL",
+    "order_id": "ORD-001",
+    "summary": "Customer requests a refund for order ORD-001."
+  },
+  "expected_validation": {
+    "valid": false,
+    "errors": [
+      "Invalid intent"
+    ]
+  }
+}
